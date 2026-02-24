@@ -54,7 +54,8 @@ export async function GET() {
           };
         }
 
-        const ingreso_cop = 200_000;
+        const INGRESO_POR_PAQUETE: Record<string, number> = { basico: 500000, estandar: 700000, pro: 1100000 };
+        const ingreso_cop = INGRESO_POR_PAQUETE[config.paquete_minutos] || config.ingreso_mensual_cop || 500_000;
         const costo_cop = Math.round(stats.costo_usd * TRM);
         const ganancia = ingreso_cop - costo_cop;
         const margen = Math.round((ganancia / ingreso_cop) * 100);
