@@ -2,182 +2,161 @@
 import { useEffect, useState } from "react";
 
 interface Cliente {
-  slug: string;
-  nombre: string;
-  tipo: string;
-  phone: string | null;
-  agent_id: string | null;
-  n8n_workflow: string | null;
-  sheet_url: string | null;
-  llamadas: number;
-  minutos: number;
-  costo_usd: number;
-  ingreso_cop: number;
-  costo_cop: number;
-  ganancia_cop: number;
-  margen: number;
-  alerta: boolean;
+  slug: string; nombre: string; tipo: string; phone: string | null;
+  agent_id: string | null; n8n_workflow: string | null; sheet_url: string | null;
+  llamadas: number; minutos: number; costo_usd: number; ingreso_cop: number;
+  costo_cop: number; ganancia_cop: number; margen: number; alerta: boolean;
   ultima_llamada: string | null;
 }
+
+function fmt(n: number) { return n.toLocaleString("es-CO"); }
+
+const TIPO_ICON: Record<string, string> = {
+  odontologia:"🦷", estetica:"✨", taller:"🔧", abogado:"⚖️", otro:"🏢"
+};
 
 export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
-  const [seleccionado, setSeleccionado] = useState<Cliente | null>(null);
+  const [expandido, setExpandido] = useState<string|null>(null);
 
-  useEffect(() => {
-    fetch("/api/clientes")
-      .then((r) => r.json())
-      .then((data) => {
-        setClientes(Array.isArray(data) ? data : []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
+  useEffect(()=>{
+    fetch("/api/clientes").then(r=>r.json()).then(d=>{
+      setClientes(Array.isArray(d)?d:[]);
+      setLoading(false);
+    }).catch(()=>setLoading(false));
+  },[]);
   return (
-    <div>
-      <div className="mb-8 flex items-center justify-between">
+    <div className="animate-fade-up">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-white">Clientes</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            {clientes.length} recepcionista{clientes.length !== 1 ? "s" : ""} activa{clientes.length !== 1 ? "s" : ""}
+          <h1 className="text-2xl font-bold tracking-tight" style={{ color:"var(--text)" }}>Clientes</h1>
+          <p className="text-sm mt-1" style={{ color:"var(--text-3)" }}>
+            {loading?"Cargando...":`${clientes.length} recepcionista${clientes.length!==1?"s":""} activa${clientes.length!==1?"s":""}`}
           </p>
         </div>
-        <a
-          href="/nuevo-cliente"
-          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
-        >
-          + Nuevo Cliente
+        <a href="/nuevo-cliente"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all duration-150 hover:opacity-90 active:scale-95"
+          style={{ background:"linear-gradient(135deg,#6366f1,#8b5cf6)" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nuevo Cliente
         </a>
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center h-40 text-gray-400">
-          Cargando clientes...
+        <div className="space-y-3">
+          {[...Array(3)].map((_,i)=>(
+            <div key={i} className="rounded-2xl h-28 shimmer" style={{ border:"1px solid var(--border)" }}/>
+          ))}
         </div>
-      ) : clientes.length === 0 ? (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-12 text-center">
-          <p className="text-gray-400 text-lg mb-4">No hay clientes aun</p>
-          <a
-            href="/nuevo-cliente"
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-sm font-medium transition-colors"
-          >
+      ) : clientes.length===0 ? (
+        <div className="rounded-2xl py-20 text-center" style={{ background:"var(--card)", border:"1px solid var(--border)" }}>
+          <div className="text-5xl mb-4">🤖</div>
+          <p className="text-base font-semibold mb-2" style={{ color:"var(--text)" }}>No hay clientes aún</p>
+          <p className="text-sm mb-6" style={{ color:"var(--text-3)" }}>Crea tu primer agente y empieza a generar ingresos</p>
+          <a href="/nuevo-cliente" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white"
+            style={{ background:"linear-gradient(135deg,#6366f1,#8b5cf6)" }}>
             Crear primer cliente
           </a>
         </div>
       ) : (
-        <div className="grid gap-4">
-          {clientes.map((c) => (
-            <div
-              key={c.slug}
-              className="bg-gray-900 border border-gray-800 rounded-xl p-6 hover:border-gray-600 transition-colors cursor-pointer"
-              onClick={() => setSeleccionado(seleccionado?.slug === c.slug ? null : c)}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-lg font-semibold text-white">{c.nombre}</h3>
-                    {c.alerta ? (
-                      <span className="px-2 py-0.5 bg-red-900/50 text-red-400 rounded text-xs">Alerta margen bajo</span>
-                    ) : c.agent_id ? (
-                      <span className="px-2 py-0.5 bg-green-900/50 text-green-400 rounded text-xs">Activo</span>
-                    ) : (
-                      <span className="px-2 py-0.5 bg-yellow-900/50 text-yellow-400 rounded text-xs">Sin desplegar</span>
-                    )}
+        <div className="space-y-3">
+          {clientes.map(c=>{
+            const open = expandido===c.slug;
+            const margenColor = c.margen>=70?"text-emerald-400":c.margen>=50?"text-amber-400":"text-rose-400";
+            return (
+              <div key={c.slug} className="rounded-2xl overflow-hidden transition-all duration-200"
+                style={{ background:"var(--card)", border:`1px solid ${open?"var(--border-hover)":"var(--border)"}` }}>
+                {/* Header row */}
+                <div className="px-6 py-4 flex items-center gap-4 cursor-pointer"
+                  onClick={()=>setExpandido(open?null:c.slug)}
+                  onMouseEnter={e=>(e.currentTarget.style.background="rgba(255,255,255,0.02)")}
+                  onMouseLeave={e=>(e.currentTarget.style.background="transparent")}>
+                  {/* Icon + name */}
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+                    style={{ background:"rgba(99,102,241,0.1)" }}>
+                    {TIPO_ICON[c.tipo]||"🏢"}
                   </div>
-                  <p className="text-gray-400 text-sm">{c.tipo}</p>
-                  {c.phone && (
-                    <p className="text-gray-500 text-xs mt-1">{c.phone}</p>
-                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <p className="font-semibold text-sm" style={{ color:"var(--text)" }}>{c.nombre}</p>
+                      {c.alerta ? (
+                        <span className="badge badge-red"><span className="dot dot-red"/>Margen bajo</span>
+                      ) : c.agent_id ? (
+                        <span className="badge badge-green"><span className="dot dot-green"/>Activo</span>
+                      ) : (
+                        <span className="badge badge-yellow">Sin desplegar</span>
+                      )}
+                    </div>
+                    {c.phone && <p className="text-xs font-terminal mt-0.5" style={{ color:"var(--text-3)" }}>{c.phone}</p>}
+                  </div>
+                  {/* Metrics */}
+                  <div className="flex items-center gap-8">
+                    <div className="text-right hidden sm:block">
+                      <p className="text-xs" style={{ color:"var(--text-3)" }}>Llamadas</p>
+                      <p className="text-lg font-bold" style={{ color:"var(--text)" }}>{c.llamadas}</p>
+                    </div>
+                    <div className="text-right hidden md:block">
+                      <p className="text-xs" style={{ color:"var(--text-3)" }}>Ganancia</p>
+                      <p className="text-lg font-bold text-emerald-400">${fmt(c.ganancia_cop)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs" style={{ color:"var(--text-3)" }}>Margen</p>
+                      <p className={`text-lg font-bold ${margenColor}`}>{c.margen}%</p>
+                    </div>
+                    <svg className={`transition-transform duration-200 ${open?"rotate-180":""}`}
+                      width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                  </div>
                 </div>
-                <div className="grid grid-cols-3 gap-6 text-right">
-                  <div>
-                    <p className="text-xs text-gray-500">Llamadas</p>
-                    <p className="text-xl font-bold text-white">{c.llamadas}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Ganancia</p>
-                    <p className="text-xl font-bold text-green-400">
-                      ${c.ganancia_cop.toLocaleString("es-CO")}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Margen</p>
-                    <p
-                      className={`text-xl font-bold ${
-                        c.margen >= 70
-                          ? "text-green-400"
-                          : c.margen >= 50
-                          ? "text-yellow-400"
-                          : "text-red-400"
-                      }`}
-                    >
-                      {c.margen}%
-                    </p>
-                  </div>
-                </div>
-              </div>
 
-              {seleccionado?.slug === c.slug && (
-                <div className="mt-6 pt-6 border-t border-gray-800 grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <p className="text-xs text-gray-400 mb-1">Minutos de llamada</p>
-                    <p className="text-lg font-semibold text-white">{c.minutos} min</p>
-                  </div>
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <p className="text-xs text-gray-400 mb-1">Costo Retell</p>
-                    <p className="text-lg font-semibold text-white">
-                      ${c.costo_usd.toFixed(2)} USD
-                    </p>
-                    <p className="text-xs text-gray-500">${c.costo_cop.toLocaleString("es-CO")} COP</p>
-                  </div>
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <p className="text-xs text-gray-400 mb-1">Ingreso mensual</p>
-                    <p className="text-lg font-semibold text-yellow-400">
-                      ${c.ingreso_cop.toLocaleString("es-CO")} COP
-                    </p>
-                  </div>
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <p className="text-xs text-gray-400 mb-1">Ultima llamada</p>
-                    <p className="text-sm font-semibold text-white">
-                      {c.ultima_llamada || "Sin llamadas"}
-                    </p>
-                  </div>
-                  <div className="col-span-2 lg:col-span-4 flex gap-3 flex-wrap">
-                    {c.agent_id && (
-                      <span className="text-xs bg-gray-700 text-gray-300 px-3 py-1.5 rounded">
-                        Agent: {c.agent_id}
-                      </span>
-                    )}
-                    {c.n8n_workflow && (
-                      <span className="text-xs bg-gray-700 text-gray-300 px-3 py-1.5 rounded">
-                        n8n: {c.n8n_workflow}
-                      </span>
-                    )}
-                    {c.sheet_url && (
-                      <a
-                        href={c.sheet_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-xs bg-blue-900/50 text-blue-400 px-3 py-1.5 rounded hover:bg-blue-900 transition-colors"
-                      >
-                        Ver Google Sheet
+                {/* Expanded detail */}
+                {open && (
+                  <div className="px-6 pb-6" style={{ borderTop:"1px solid var(--border)" }}>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 mb-4">
+                      {[
+                        ["Minutos de llamada", `${c.minutos} min`, "var(--text)"],
+                        ["Costo Retell", `$${c.costo_usd.toFixed(2)} USD`, "var(--text)"],
+                        ["Ingreso mensual", `$${fmt(c.ingreso_cop)} COP`, "#34d399"],
+                        ["Última llamada", c.ultima_llamada||"Sin llamadas", "var(--text)"],
+                      ].map(([k,v,color])=>(
+                        <div key={k} className="rounded-xl p-3" style={{ background:"var(--elevated)", border:"1px solid var(--border)" }}>
+                          <p className="text-xs mb-1" style={{ color:"var(--text-3)" }}>{k}</p>
+                          <p className="text-sm font-semibold" style={{ color:color as string }}>{v}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {c.agent_id && (
+                        <span className="px-3 py-1.5 rounded-lg text-xs font-terminal" style={{ background:"var(--elevated)", color:"var(--text-2)", border:"1px solid var(--border)" }}>
+                          Agent: {c.agent_id}
+                        </span>
+                      )}
+                      {c.n8n_workflow && (
+                        <span className="px-3 py-1.5 rounded-lg text-xs font-terminal" style={{ background:"var(--elevated)", color:"var(--text-2)", border:"1px solid var(--border)" }}>
+                          n8n: {c.n8n_workflow}
+                        </span>
+                      )}
+                      {c.sheet_url && (
+                        <a href={c.sheet_url} target="_blank" rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                          style={{ background:"rgba(52,211,153,0.1)", color:"#34d399", border:"1px solid rgba(52,211,153,0.2)" }}>
+                          Ver Google Sheet ↗
+                        </a>
+                      )}
+                      <a href={`/llamadas?agent_id=${c.agent_id}`}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                        style={{ background:"rgba(99,102,241,0.1)", color:"var(--accent-2)", border:"1px solid rgba(99,102,241,0.2)" }}>
+                        Ver llamadas →
                       </a>
-                    )}
-                    <a
-                      href={`/llamadas?agent_id=${c.agent_id}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-xs bg-purple-900/50 text-purple-400 px-3 py-1.5 rounded hover:bg-purple-900 transition-colors"
-                    >
-                      Ver llamadas
-                    </a>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
