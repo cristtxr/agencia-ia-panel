@@ -1,7 +1,5 @@
-import fs from "fs";
-import path from "path";
+import { leerCliente, actualizarConfig, guardarCliente } from "@/app/lib/supabase";
 
-const CLIENTES_DIR = path.join(process.cwd(), "..", "clientes");
 const RETELL_BASE = "https://api.retellai.com";
 const RETELL_KEY = process.env.RETELL_API_KEY!;
 const N8N_BASE = process.env.N8N_BASE_URL!;
@@ -40,14 +38,6 @@ async function calcomFetch(endpoint: string, method: string, body?: object) {
   const text = await res.text();
   if (!res.ok) throw new Error(`Cal.com ${endpoint}: ${res.status} - ${text.slice(0, 300)}`);
   return text ? JSON.parse(text) : {};
-}
-
-function leerConfig(slug: string) {
-  return JSON.parse(fs.readFileSync(path.join(CLIENTES_DIR, slug, "config.json"), "utf-8"));
-}
-
-function guardarConfig(slug: string, config: object) {
-  fs.writeFileSync(path.join(CLIENTES_DIR, slug, "config.json"), JSON.stringify(config, null, 2));
 }
 
 function buildCalcomTools(eventTypeId: number, duration: number) {
@@ -152,19 +142,20 @@ export async function POST(req: Request) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
 
       try {
-        if (!fs.existsSync(path.join(CLIENTES_DIR, slug, "config.json"))) {
+        const clienteData = await leerCliente(slug);
+        if (!clienteData) {
           send({ paso: 0, estado: "error", msg: `❌ Cliente no encontrado: ${slug}` });
           controller.close(); return;
         }
 
         // Guardar prompt editado si el usuario lo modifico
         if (promptEditado && promptEditado.trim()) {
-          fs.writeFileSync(path.join(CLIENTES_DIR, slug, "prompt.md"), promptEditado);
+          await guardarCliente(slug, clienteData.config, promptEditado);
         }
 
-        let config = leerConfig(slug);
+        let config = (await leerCliente(slug))?.config ?? clienteData.config;
         const negocio = config.business_name;
-        const prompt = fs.readFileSync(path.join(CLIENTES_DIR, slug, "prompt.md"), "utf-8");
+        const prompt = (await leerCliente(slug))?.prompt ?? clienteData.prompt;
         send({ paso: 0, estado: "ok", msg: `Iniciando despliegue: ${negocio}` });
 
         // ── PASO 1: Cal.com ──────────────────────────────────
@@ -173,7 +164,7 @@ export async function POST(req: Request) {
         } else if (config.calcom_event_type_id) {
           send({ paso: 1, estado: "ok", msg: `✅ Cal.com ya configurado: ${config.calcom_event_type_id}`, saltado: true });
         } else if (!CALCOM_KEY) {
-          send({ paso: 1, estado: "error", msg: "❌ Falta CALCOM_API_KEY en .env.local" });
+          send({ paso: 1, estado: "error", msg: "❌ Falta CALCOM_API_KEY en variables de entorno" });
         } else {
           send({ paso: 1, estado: "corriendo", msg: "Configurando agendamiento en Cal.com..." });
           try {
@@ -185,8 +176,7 @@ export async function POST(req: Request) {
               hidden: false,
               locations: [{ type: "inPerson", address: config.address || "Consultar" }],
             });
-            config.calcom_event_type_id = calEvent.event_type?.id || calEvent.id;
-            guardarConfig(slug, config);
+            config = await actualizarConfig(slug, { calcom_event_type_id: calEvent.event_type?.id || calEvent.id });
             send({ paso: 1, estado: "ok", msg: `✅ Cal.com configurado: ID ${config.calcom_event_type_id}` });
           } catch (e: any) {
             send({ paso: 1, estado: "error", msg: `❌ Cal.com: ${e.message}` });
@@ -194,7 +184,7 @@ export async function POST(req: Request) {
         }
 
         // ── PASO 2: Retell (con tools de Cal.com si disponibles) ──
-        config = leerConfig(slug);
+        config = (await leerCliente(slug))?.config ?? config;
         if (config.agent_id) {
           send({ paso: 2, estado: "ok", msg: `✅ Agente ya existe: ${config.agent_id}`, saltado: true });
         } else {
@@ -202,7 +192,7 @@ export async function POST(req: Request) {
           try {
             const tools: object[] = [];
             if (config.calcom_habilitado && config.calcom_event_type_id) {
-              tools.push(...buildCalcomTools(config.calcom_event_type_id, config.appointment_duration || 30));
+              tools.push(...buildCalcomTools(config.calcom_event_type_id as number, config.appointment_duration || 30));
             }
             if (config.forwarding_number) {
               tools.push({
@@ -231,9 +221,7 @@ export async function POST(req: Request) {
               voicemail_detection_timeout_ms: 30000,
             });
 
-            config.agent_id = agent.agent_id;
-            config.llm_id = llm.llm_id;
-            guardarConfig(slug, config);
+            config = await actualizarConfig(slug, { agent_id: agent.agent_id, llm_id: llm.llm_id });
             send({ paso: 2, estado: "ok", msg: `✅ Agente creado: ${agent.agent_id}`, agent_id: agent.agent_id });
           } catch (e: any) {
             send({ paso: 2, estado: "error", msg: `❌ Retell: ${e.message}` });
@@ -241,7 +229,7 @@ export async function POST(req: Request) {
         }
 
         // ── PASO 3: Numero telefonico ──────────────────────────
-        config = leerConfig(slug);
+        config = (await leerCliente(slug))?.config ?? config;
         if (config.phone_number) {
           send({ paso: 3, estado: "ok", msg: `✅ Numero ya asignado: ${config.phone_number}`, saltado: true });
         } else if (config.comprar_numero && config.agent_id) {
@@ -252,8 +240,7 @@ export async function POST(req: Request) {
               inbound_agent_id: config.agent_id,
               nickname: negocio,
             });
-            config.phone_number = numero.phone_number;
-            guardarConfig(slug, config);
+            config = await actualizarConfig(slug, { phone_number: numero.phone_number });
             send({ paso: 3, estado: "ok", msg: `✅ Numero comprado: ${numero.phone_number}`, phone: numero.phone_number });
           } catch (e: any) {
             send({ paso: 3, estado: "error", msg: `❌ Numero: ${e.message}` });
@@ -263,19 +250,18 @@ export async function POST(req: Request) {
         }
 
         // ── PASO 4: Workflow n8n ───────────────────────────────
-        config = leerConfig(slug);
+        config = (await leerCliente(slug))?.config ?? config;
         if (config.n8n_workflow_id) {
           send({ paso: 4, estado: "ok", msg: `✅ Workflow ya existe: ${config.n8n_workflow_id}`, saltado: true });
         } else if (!N8N_BASE || !N8N_KEY) {
-          send({ paso: 4, estado: "error", msg: "❌ Faltan N8N_BASE_URL o N8N_API_KEY en .env.local" });
+          send({ paso: 4, estado: "error", msg: "❌ Faltan N8N_BASE_URL o N8N_API_KEY en variables de entorno" });
         } else {
           send({ paso: 4, estado: "corriendo", msg: "Creando workflow en n8n..." });
           try {
             const wf = await n8nFetch("/workflows", "POST", buildWorkflow(slug, negocio));
             await n8nFetch(`/workflows/${wf.id}/activate`, "POST");
-            config.n8n_workflow_id = wf.id;
-            config.webhook_url = `${N8N_BASE}/webhook/${slug}`;
-            guardarConfig(slug, config);
+            const webhookUrl = `${N8N_BASE}/webhook/${slug}`;
+            config = await actualizarConfig(slug, { n8n_workflow_id: wf.id, webhook_url: webhookUrl });
             send({ paso: 4, estado: "ok", msg: `✅ Workflow activo: ${wf.id}` });
           } catch (e: any) {
             send({ paso: 4, estado: "error", msg: `❌ n8n: ${e.message}` });
@@ -283,7 +269,7 @@ export async function POST(req: Request) {
         }
 
         // ── PASO 5: Vincular webhook ───────────────────────────
-        config = leerConfig(slug);
+        config = (await leerCliente(slug))?.config ?? config;
         if (config.agent_id && config.webhook_url) {
           send({ paso: 5, estado: "corriendo", msg: "Vinculando webhook al agente..." });
           try {
@@ -297,7 +283,7 @@ export async function POST(req: Request) {
         }
 
         // ── LISTO ──────────────────────────────────────────────
-        config = leerConfig(slug);
+        config = (await leerCliente(slug))?.config ?? config;
         send({
           paso: 99, estado: "listo",
           msg: "🎉 Agente listo para recibir llamadas",

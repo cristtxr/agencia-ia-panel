@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
 import { generarPrompt } from "@/app/lib/prompts";
-
-const CLIENTES_DIR = path.join(process.cwd(), "..", "clientes");
+import { guardarCliente, supabase } from "@/app/lib/supabase";
 
 function slugify(str: string) {
   return str.toLowerCase()
@@ -41,17 +38,21 @@ export async function POST(req: Request) {
     }
 
     const slug = slugify(nombre);
-    const carpeta = path.join(CLIENTES_DIR, slug);
 
-    if (fs.existsSync(carpeta)) {
+    // Verificar que no exista ya
+    const { data: existing } = await supabase
+      .from("clientes")
+      .select("slug")
+      .eq("slug", slug)
+      .single();
+
+    if (existing) {
       return NextResponse.json({ error: `Ya existe un cliente con ese nombre (${slug})` }, { status: 400 });
     }
 
-    fs.mkdirSync(path.join(carpeta, "logs"), { recursive: true });
-
     const paquete = paquete_minutos || "basico";
 
-    const config: Record<string, any> = {
+    const config = {
       business_name: nombre,
       business_type: tipo,
       professional_name: profesional,
@@ -85,11 +86,9 @@ export async function POST(req: Request) {
       google_sheet_url: null,
     };
 
-    fs.writeFileSync(path.join(carpeta, "config.json"), JSON.stringify(config, null, 2));
-
-    // Generar prompt especializado segun tipo de negocio
     const prompt = generarPrompt(config as any);
-    fs.writeFileSync(path.join(carpeta, "prompt.md"), prompt);
+
+    await guardarCliente(slug, config as any, prompt);
 
     return NextResponse.json({
       ok: true,

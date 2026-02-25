@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { supabase } from "@/app/lib/supabase";
 
-const CLIENTES_DIR = path.join(process.cwd(), "..", "clientes");
 const RETELL_KEY = process.env.RETELL_API_KEY!;
 const COSTO_MIN = 0.07;
 const TRM = 4200;
@@ -27,16 +25,18 @@ async function getCallsForAgent(agentId: string) {
 
 export async function GET() {
   try {
-    const carpetas = fs.readdirSync(CLIENTES_DIR).filter(
-      (f) => f !== "plantilla_base" && fs.statSync(path.join(CLIENTES_DIR, f)).isDirectory()
-    );
+    const { data: rows, error } = await supabase
+      .from("clientes")
+      .select("slug, config")
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(error.message);
+
+    const INGRESO_POR_PAQUETE: Record<string, number> = { basico: 500000, estandar: 700000, pro: 1100000 };
 
     const clientes = await Promise.all(
-      carpetas.map(async (slug) => {
-        const configPath = path.join(CLIENTES_DIR, slug, "config.json");
-        if (!fs.existsSync(configPath)) return null;
-
-        const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      (rows ?? []).map(async (row) => {
+        const { slug, config } = row;
         const agentId = config.agent_id;
 
         let stats = { llamadas: 0, minutos: 0, costo_usd: 0, ultima_llamada: null as string | null };
@@ -54,7 +54,6 @@ export async function GET() {
           };
         }
 
-        const INGRESO_POR_PAQUETE: Record<string, number> = { basico: 500000, estandar: 700000, pro: 1100000 };
         const ingreso_cop = INGRESO_POR_PAQUETE[config.paquete_minutos] || config.ingreso_mensual_cop || 500_000;
         const costo_cop = Math.round(stats.costo_usd * TRM);
         const ganancia = ingreso_cop - costo_cop;
@@ -78,7 +77,7 @@ export async function GET() {
       })
     );
 
-    return NextResponse.json(clientes.filter(Boolean));
+    return NextResponse.json(clientes);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
